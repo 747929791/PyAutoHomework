@@ -1,7 +1,7 @@
 {
     "tasks": [
         {
-            "taskID": "6",
+            "taskid": "6",
             "answer": "\\\\d+(\\\\.\\\\d+)?",
             "comment1": "You can use 'json.dumps(r'regexStr')' to get above field.",
             "score": 10,
@@ -10,7 +10,7 @@
             ]
         },
         {
-            "taskID": "7",
+            "taskid": "7",
             "score": 10,
             "answer": [
                 "一",

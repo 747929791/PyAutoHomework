@@ -6,6 +6,8 @@ import string
 import argparse
 import hashlib
 import multiprocessing
+from enum import Enum
+from typing import List, Tuple, Dict
 
 import xlrd
 import xlwt
@@ -46,6 +48,99 @@ def format_log(s, blank=2):
                 if '\t' in s:
                     x = s.index('\t')
                     L[i] = s[:x]+' '*(blank+m-x)+s[x+1:]
+
+
+class TaskType(Enum):
+    match = 0
+    mannal = 1
+
+
+class Task:
+    def __init__(self, args):
+        assert(type(args) == list and all(type(s) == str for s in args))
+        self.taskid = args[0]                       # 任务的唯一ID
+        if len(args)==0:
+            # see settings.json
+            self.fromSettings()
+        if len(args) >= 3:
+            self.parseArgs(args[1:])
+            self.answer = str(args[1])
+            self.score = float(args[2])
+        else:
+            raise NotImplementedError
+        assert(hasattr(self, 'taskid'))
+        assert(hasattr(self, 'score') and type(self.score) == float)
+        assert(hasattr(self, 'type'))
+
+    def parseArgs(self,args):
+        self.isregex = 'REGEX' in args          # 是否开启正则匹配模式
+        self.issub = 'SUB' in args             # 是否是子问题（主问题满分自动跳过）
+        self.ismannal = 'MANNAL' in args        # 是否手工阅卷
+        self.isjump = 'JUMP' in args            # 是否是子问题（主问题满分自动跳过）
+        if self.isjump:
+            self.jumpTarget = args[1+args.index('JUMP')]
+
+    def fromSettings(self):
+        pass # TODO
+
+
+def checkTaskList(tasks: List[Task]):
+    taskD = dict()
+    for task in tasks:
+        taskD[task.taskid] = task
+    assert(all(task.isjump == False or task.jumpTarget in taskD for task in tasks))
+
+
+def parseAnswer(answer: str):
+    """
+    answer:       text of answer.docx
+    return:       List[Task]
+    """
+    task_pattern = r'\$>:(.*?)<:\$'
+    # List[Tuple[task_id,answer,score]]
+    tasks = []
+    for s in re.findall(task_pattern, answer):
+        args = s.split('|')
+        tasks.append(Task(args))
+    checkTaskList(tasks)
+    return tasks
+
+
+def parse(user_file: str, answer: str):
+    """
+    user_file:    user's docx filepath
+    answer:       text of answer.docx
+    return:       List[Tuple[user_answer:str,List[cv2::imgs]]]
+    """
+    file = os.path.basename(user_file)
+    suffix = os.path.splitext(file)[-1]  # .docx
+    try:
+        user_input, user_imgs = docxparser.process(user_file)
+    except:
+        log = 'Parse docx error. Your file: '+file
+        score = 0.0
+        return {'score': score, 'log': log}
+
+    # find all task
+    split_pattern = r'\$>:.*?<:\$'
+    # parse user's answer
+    template_str = ''
+    task_address = []
+    for s in re.split(split_pattern, answer):
+        template_str += s
+        task_address.append(len(template_str))
+    pair = match(user_input, template_str)
+    addr_mapping = dict()
+    for now_addr in range(len(pair)):
+        a, b = pair[now_addr]
+        if b:
+            addr_mapping[len(addr_mapping)] = now_addr
+    addr_mapping[len(addr_mapping)] = len(pair)
+    user_answer = []
+    for i in task_address:
+        L = pair[addr_mapping[i-1]+1:addr_mapping[i]]
+        user_answer.append((''.join(a for a, b in L)).strip())
+    user_answer = user_answer[:len(tasks)]
 
 
 def scoring(user_file: str, answer: str):
@@ -109,22 +204,22 @@ def scoring(user_file: str, answer: str):
 if __name__ == "__main__":
     # parse args
     parser = argparse.ArgumentParser()
-    parser.add_argument('-a', '--answer', type=str,
-                        required=True, help='file path of answer.docx')
-    parser.add_argument('-d', '--data', type=str,
-                        required=True, help='folder path of student.docx')
-    parser.add_argument('-e', '--excel', type=str,
-                        required=True, help='file path of template.xls')
-    parser.add_argument('-r', '--result', type=str,
-                        required=True, help='folder path of result')
-    parser.add_argument('-s', '--server', type=str,
-                        required=True, help='the server address that displays the log')
+    parser.add_argument('-w', '--workdir', type=str,
+                        required=True, help='working folder path.')
     args = parser.parse_args()
     # pre-work
-    answer, answer_imgs = docxparser.process(args.answer)
-    data_path = os.path.abspath(args.data)
+    root = os.path.abspath(args.workdir)
+    data_path = os.path.join(root, 'data')
+    xls_path = os.path.join(root, 'template.xls')
+    answer_path = os.path.join(root, 'answer.docx')
+    result_path = os.path.join(root, 'result')
+    assert(os.path.exists(root))
+    assert(os.path.exists(data_path))
+    assert(os.path.exists(xls_path))
+    assert(os.path.exists(answer_path))
+    answer, answer_imgs = docxparser.process(answer_path)
     user_files = glob.glob(os.path.join(data_path, '*.*'))
-    workbook = xlrd.open_workbook(args.excel)
+    workbook = xlrd.open_workbook(xls_path)
     assert(len(workbook.sheets()) == 1)
     print('answer.docx:', repr(answer[:100]) +
           ('' if len(answer) < 100 else '......'))
@@ -136,23 +231,36 @@ if __name__ == "__main__":
     D = sorted([(k, v) for k, v in D.items()], key=lambda x: -x[1])
     print('\n'.join([f'\t.{k}:{v}' for k, v in D]))
     studentID = [os.path.basename(s).split('_')[0] for s in user_files]
+    hasIllegalFile = False
     for i in range(len(studentID)):
         if len(studentID[i]) != 10 or any(c not in string.digits for c in studentID[i]):
             print('Illegal file:', os.path.basename(user_files[i]))
-    result_path = os.path.abspath(args.result)
+            hasIllegalFile = True
+    if hasIllegalFile:
+        print('Has illegal file, mandatory termination.')
+        quit()
     log_path = os.path.join(result_path, 'log')
     create_folder(result_path)
     create_folder(log_path)
     begin = input('Press Y to be continue: ')
     if begin.lower() == 'y':
+        result = []  # Store the final result: [{'score':float,'log':str},...]
+        # Step 1: Parse user document and get the content of each task
+        print('Step 1: Sequence Alignment')
         with multiprocessing.Pool(16) as p:
-            result = p.starmap(scoring, [(user_files[i], answer)
-                                         for i in range(len(user_files))])
-        # result=[] # for DEBUG
-        # for i in range(len(user_files)):
-        #     if '2020010910' in user_files[i]:
-        #         result.append(scoring(user_files[i], answer))
-        # write result
+            step1_result = p.starmap(parse, [(user_files[i], answer)
+                                             for i in range(len(user_files))])
+
+        # Step 2: Scoring
+        for i in range(len(step1_result)):
+            data = step1_result[i]
+            if type(data) == dict and 'score' in data:
+                # parse user.docx error, record directly.
+                result.append(data)
+            else:
+                result.append(scoring(data))
+
+        # write result to result.xls
         rsheet = workbook.sheet_by_index(0)
         wbk = xlwt.Workbook()
         wsheet = wbk.add_sheet(rsheet.name, cell_overwrite_ok=True)
