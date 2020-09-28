@@ -1,0 +1,27 @@
+{
+    "tasks": [
+        {
+            "taskID": "6",
+            "answer": "\\\\d+(\\\\.\\\\d+)?",
+            "comment1": "You can use 'json.dumps(r'regexStr')' to get above field.",
+            "score": 10,
+            "args": [
+                "REGEX"
+            ]
+        },
+        {
+            "taskID": "7",
+            "score": 10,
+            "answer": [
+                "一",
+                {
+                    "answer": "1",
+                    "score": 5
+                },
+                "壹"
+            ],
+            "comment1": "Multiple answers when answer is a LIST, which can define partial score with a DICT.",
+            "comment2": "For example, '一' and '壹' get full score, but '1' get half."
+        }
+    ]
+}

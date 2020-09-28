@@ -1,4 +1,5 @@
 #! /usr/bin/env python
+# -*- coding: utf-8 -*-
 # Modified copy of docx2txt
 
 import argparse
@@ -8,8 +9,13 @@ import zipfile
 import os
 import sys
 
+import cv2
+import numpy as np
+
 
 nsmap = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+
+graphic_token = '^GRAPHICTOKEN$'
 
 
 def process_args():
@@ -72,12 +78,27 @@ def xml2text(xml):
             text += '\n'
         elif child.tag == qn("w:p"):
             text += '\n\n'
+        elif tagroot == 'graphic':
+            text += graphic_token
         elif 'grid' in tagroot.lower():
             text += '{'+tagroot+'}'
+        else:
+            ignore = {'document', 'body', 'pPr', 'jc', 'rPr', 'rFonts', 'b', 'bCs', 'docGrid', 'sz',
+                      'szCs', 'r', 'color', 'pStyle', 'numPr', 'ilvl', 'numId', 'ind', 'tbl', 'tblPr', 'tblStyle',
+                      'tblW', 'tblBorders', 'left', 'right', 'gridCol', 'tblLook', 'tr', 'trPr', 'tc', 'tcPr', 'tcW', 'i', 'iCs',
+                      'tblInd'}  # ,'lang','noProof','drawing','inline','extent','effectExtent','docPr','cNvGraphicFramePr',
+            #'graphicFrameLocks','graphic','graphicData','pic','nvPicPr','cNvPr','cNvPicPr','blipFill'}
+            suffix = text[-20:]
+            if tagroot not in ignore:
+                #print(child.tag)
+                log = ' keys:'+repr(child.keys())+' items:' + \
+                    repr(child.items())+' attrib:'+repr(child.attrib)
+                #text += '{'+tagroot+(' text:'+str(child.text) if child.text else '')+(' tail:'+str(child.tail) if child.tail else '')+log+'}'
     return text
 
 
 def process(docx, img_dir=None):
+    # return (text:str,imgs:List[cv2::img])
     text = u''
 
     # unzip the docx in memory
@@ -102,20 +123,24 @@ def process(docx, img_dir=None):
         if re.match(footer_xmls, fname):
             text += xml2text(zipf.read(fname))
 
+    imgList = []
     if img_dir is not None:
         # extract images
         for fname in filelist:
             _, extension = os.path.splitext(fname)
             if extension in [".jpg", ".jpeg", ".png", ".bmp"]:
-                dst_fname = os.path.join(img_dir, os.path.basename(fname))
-                with open(dst_fname, "wb") as dst_f:
-                    dst_f.write(zipf.read(fname))
+                binary = np.frombuffer(zipf.read(fname), np.uint8)
+                img = cv2.imdecode(binary, cv2.IMREAD_ANYCOLOR)
+                imgList.append((fname, img))
 
     zipf.close()
-    return text.strip()
+    return (text.strip(), imgList)
 
 
 if __name__ == '__main__':
-    args = process_args()
-    text = process(args.docx, args.img_dir)
-    sys.stdout.write(text.encode('utf-8'))
+    #args = process_args()
+    #text = process(args.docx, args.img_dir)
+    text = process('test.docx', 'img')
+    with open('test.out', 'w', encoding='utf-8') as w:
+        w.write(repr(text[0]))
+    #sys.stdout.write(text.encode('utf-8'))

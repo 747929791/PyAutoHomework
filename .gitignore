@@ -367,5 +367,6 @@ FodyWeavers.xsd
 
 # My
 .vscode/*
-.log
+log
 *.bat
+test*

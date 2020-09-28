@@ -36,7 +36,7 @@ def DP(A, B):
                 gv = (dp[i][j]-b*j, j)
     match = []
     x, y = n, m
-    while(x > 0 and y > 0):
+    while(x > 0 or y > 0):
         nx, ny = ord[x][y]
         if nx == x-1 and ny == y-1:
             match.append((A[x-1], B[y-1]))

@@ -13,10 +13,12 @@ import xlwt
 import docxparser
 from match import match
 
+
 def create_folder(path):
     if not os.path.exists(path):
         os.makedirs(path)
         print('create folder:', path)
+
 
 def format_log(s, blank=2):
     """
@@ -55,7 +57,7 @@ def scoring(user_file: str, answer: str):
     file = os.path.basename(user_file)
     suffix = file.split('.')[-1]
     try:
-        user_input = docxparser.process(user_file)
+        user_input, user_imgs = docxparser.process(user_file)
     except:
         log = 'Parse docx error. Your file: '+file
         score = 0.0
@@ -119,7 +121,7 @@ if __name__ == "__main__":
                         required=True, help='the server address that displays the log')
     args = parser.parse_args()
     # pre-work
-    answer = docxparser.process(args.answer)
+    answer, answer_imgs = docxparser.process(args.answer)
     data_path = os.path.abspath(args.data)
     user_files = glob.glob(os.path.join(data_path, '*.*'))
     workbook = xlrd.open_workbook(args.excel)
@@ -138,7 +140,7 @@ if __name__ == "__main__":
         if len(studentID[i]) != 10 or any(c not in string.digits for c in studentID[i]):
             print('Illegal file:', os.path.basename(user_files[i]))
     result_path = os.path.abspath(args.result)
-    log_path =  os.path.join(result_path,'log')
+    log_path = os.path.join(result_path, 'log')
     create_folder(result_path)
     create_folder(log_path)
     begin = input('Press Y to be continue: ')
@@ -146,6 +148,10 @@ if __name__ == "__main__":
         with multiprocessing.Pool(16) as p:
             result = p.starmap(scoring, [(user_files[i], answer)
                                          for i in range(len(user_files))])
+        # result=[] # for DEBUG
+        # for i in range(len(user_files)):
+        #     if '2020010910' in user_files[i]:
+        #         result.append(scoring(user_files[i], answer))
         # write result
         rsheet = workbook.sheet_by_index(0)
         wbk = xlwt.Workbook()
@@ -158,14 +164,15 @@ if __name__ == "__main__":
             if id in studentID:
                 D = result[studentID.index(id)]
                 wsheet.write(i, 4, D['score'])
-                if len(D['log'])<500:
+                if len(D['log']) < 500:
                     wsheet.write(i, 5, D['log'])
                 else:
                     # Since the log is usually very large, the log will be written to the file
-                    m=hashlib.md5()
+                    m = hashlib.md5()
                     m.update(str.encode(D['log']))
                     log_name = m.hexdigest()
-                    with open(os.path.join(log_path,log_name),'wb') as w:
-                        w.write(str.encode(D['log'],encoding='utf-8'))
-                    wsheet.write(i, 5, 'The scoring details are here: '+args.server+log_name)
+                    with open(os.path.join(log_path, log_name), 'wb') as w:
+                        w.write(str.encode(D['log'], encoding='utf-8'))
+                    wsheet.write(
+                        i, 5, 'The scoring details are here: '+args.server+log_name)
         wbk.save(os.path.join(result_path, 'result.xls'))
