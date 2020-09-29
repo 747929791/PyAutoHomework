@@ -12,6 +12,7 @@ from typing import List, Tuple, Dict
 import xlrd
 import xlwt
 import numpy as np
+import cv2
 
 import docxparser
 from match import match
@@ -55,10 +56,10 @@ class Task:
     def __init__(self, args: List[str], settings: Dict):
         assert(type(args) == list and all(type(s) == str for s in args))
         self.taskid = args[0]                       # 任务的唯一ID
-        if len(args) == 0:
+        if len(args) == 1:
             # see settings.json
             self.fromSettings(settings)
-        if len(args) >= 3:
+        elif len(args) >= 3:
             self.parseArgs(args[1:])
             self.answer = str(args[1])
             self.score = float(args[2])
@@ -81,38 +82,86 @@ class Task:
         assert('tasks' in settings)
         assert(self.taskid in settings['tasks'])
         setting = settings['tasks'][self.taskid]
-        self.score = setting['score']
+        self.score = float(setting['score'])
         self.answer = setting.get('answer', '')
-        parseArgs(setting.get('args', []))
+        self.parseArgs(setting.get('args', []))
 
-    def run(self, userid:str, text: str, imgs: List[np.ndarray], tasks: List[Task]) -> Tuple[Dict]:
+    def run(self, userid:str, result_path:str, text: str, imgs: List[np.ndarray], tasks: List) -> Tuple[Dict]:
         """
         return {'score':float,'log':str}
         """
         result=dict()
         if self.ismannal:
             # 人工阅卷
-            if self.isnocomment:
-                result['log']=''
+            task_key = userid+'-'+self.taskid
+            cache_path = os.path.join(result_path,'mannal.json')
+            cache = json.load(open(cache_path,'r')) if os.path.exists(cache_path) else {}
+            if task_key in cache:
+                result = cache[task_key]
             else:
-                result['log']=input('Write your comment here:')
+                print(userid,self.taskid,':')
+                print(text)
+                if len(imgs)>0:
+                    for i in range(len(imgs)):
+                        cv2.imshow('img'+str(i),imgs[i])
+                    cv2.waitKey(10)
+                while True:
+                    score = input('Input score:')
+                    if re.match(r'^\d+(.\d+)?$',score):
+                        result['score']=float(score)
+                        break
+                    else:
+                        print('  Format error!')
+                if self.isnocomment:
+                    result['log']=''
+                else:
+                    result['log']=input('Write your comment here:')
+                if len(imgs)>0:
+                    cv2.destroyAllWindows()
+                cache[task_key]=result
+                json.dump(cache,open(cache_path,'w'))
         else:
             # 自动阅卷
             if self.islowercase:
                 text=text.lower()
-            if True: # TODO
-                result['score'] = self.score
-
+            def match(answer,text):
+                if self.isregex:
+                    return bool(re.match('^'+answer+'$',text))
+                else:
+                    return answer==text
+            def check(item,text):
+                # return score
+                if type(item)==str:
+                    return self.score if match(item,text) else 0.0
+                elif type(item)==dict:
+                    return item['score'] if match(item['answer'],text) else 0.0
+                elif type(item)==list:
+                    for answer in item:
+                        r=check(answer,text)
+                        if r>0.0:
+                            return r
+                    return 0.0
+                else:
+                    raise NotImplementedError
+            result['score'] = check(self.answer)
             if self.isnocomment:
                 result_symbol = 'Invisible'
             elif result['score']==self.score:
                 result_symbol = '√'+f'  +{self.score}'
             elif result['score']>0:
-                result_symbol = '×'+f'  +{result['score']}'
+                score = result['score']
+                result_symbol = '×'+f'  +{score}'
             else:
                 result_symbol = '×'
             log = f'Task:{self.taskid}\tYour_Answer:"{text}"\t{result_symbol}\n'
         assert('score' in result and 'log' in result)
+        if self.isjump and result['score']<self.score:
+            for task in tasks:
+                if task.taskid == self.jumpTarget:
+                    print(f'Wrong answer at {self.taskid}, jump to{task.taskid}.')
+                    return task.run(userid,result_path,text,imgs,tasks)
+        else:
+            print(result['log'])
         return result
 
 
@@ -128,7 +177,7 @@ def parseAnswer(answer: str, settings: Dict):
     answer:       text of answer.docx
     return:       List[Task]
     """
-    task_pattern = r'\$>:(.*?)<:\$'
+    task_pattern = r'\$:>(.*?)<:\$'
     # List[Tuple[task_id,answer,score]]
     tasks = []
     for s in re.findall(task_pattern, answer):
@@ -154,13 +203,20 @@ def parse(user_file: str, answer: str):
         return {'score': score, 'log': log}
 
     # find all task
-    split_pattern = r'\$>:.*?<:\$'
+    split_pattern = r'\$:>.*?<:\$'
     # parse user's answer
     template_str = ''
     task_address = []
     for s in re.split(split_pattern, answer):
         template_str += s
         task_address.append(len(template_str))
+    L=user_input.split(docxparser.graphic_token)
+    assert(len(L)==len(user_imgs)+1)
+    user_input = ''
+    for i in range(len(L)):
+        user_input += L[i]
+        if i<len(user_imgs):
+            user_input+=f'<docximg:{i}>'
     pair = match(user_input, template_str)
     addr_mapping = dict()
     for now_addr in range(len(pair)):
@@ -171,65 +227,26 @@ def parse(user_file: str, answer: str):
     user_answer = []
     for i in task_address:
         L = pair[addr_mapping[i-1]+1:addr_mapping[i]]
-        user_answer.append((''.join(a for a, b in L)).strip())
-    user_answer = user_answer[:len(tasks)]
+        text=(''.join(a for a, b in L)).strip()
+        imgs = [user_imgs[int(i)] for i in re.findall(r'<docximg:(\d+)>',text)]
+        user_answer.append((text,imgs))
+    return user_answer
 
 
-def scoring(user_file: str, answer: str):
+def scoring(userid: str, result_path:str, user_input:Tuple[str,List[np.ndarray]], tasks: List[Task]):
     """
-    user_file:    user's docx filepath
-    answer:       text of answer.docx
     return:       Dict:{'score':float,'log':str}
     """
-    file = os.path.basename(user_file)
-    suffix = file.split('.')[-1]
-    try:
-        user_input, user_imgs = docxparser.process(user_file)
-    except:
-        log = 'Parse docx error. Your file: '+file
-        score = 0.0
-        return {'score': score, 'log': log}
-
-    # find all task
-    task_pattern = r'\$(.*?)\|(.*?)\|(.*?)\$'
-    split_pattern = r'\$.*?\|.*?\|.*?\$'
-    # List[Tuple[task_id,answer,score]]
-    tasks = re.findall(task_pattern, answer)
-    tasks = [(str(task_id), str(answer), float(score))
-             for task_id, answer, score in tasks]
-    # parse user's answer
-    template_str = ''
-    task_address = []
-    for s in re.split(split_pattern, answer):
-        template_str += s
-        task_address.append(len(template_str))
-    pair = match(user_input, template_str)
-    addr_mapping = dict()
-    for now_addr in range(len(pair)):
-        a, b = pair[now_addr]
-        if b:
-            addr_mapping[len(addr_mapping)] = now_addr
-    addr_mapping[len(addr_mapping)] = len(pair)
-    user_answer = []
-    for i in task_address:
-        L = pair[addr_mapping[i-1]+1:addr_mapping[i]]
-        user_answer.append((''.join(a for a, b in L)).strip())
-    user_answer = user_answer[:len(tasks)]
-
-    # now user_answer[i]:str <-> tasks[i]:Tuple[task_id,answerStr,score]
     sum_score = 0.0
     log = 'This report is generated by the automatic marking program\n'
-    for uanswer, (task_id, answer, score) in zip(user_answer, tasks):
-        if uanswer.lower() == answer.lower():
-            sum_score += float(score)
-            result_symbol = '√'+f'  +{score}'
-        else:
-            result_symbol = '×'
-        #log += f'  Task:{task_id}\tAnswer:"{answer}"\tYour_Answer:"{uanswer}"\t{result_symbol}\n'
-        log += f'  Task:{task_id}\tYour_Answer:"{uanswer}"\t{result_symbol}\n'
+    for (text,imgs), task in zip(user_input, tasks):
+        if not task.issub:
+            result = task.run(userid,result_path,text,imgs,tasks)
+            log += '  '+result['log']
+            sum_score+=result['score']
     log += f'Total Score: {sum_score}\n'
     log = format_log(log)
-    print(file, sum_score)
+    print(userid, sum_score)
     return {'score': sum_score, 'log': log}
 
 
@@ -283,10 +300,11 @@ if __name__ == "__main__":
         result = []  # Store the final result: [{'score':float,'log':str},...]
         # Step 1: Parse user document and get the content of each task
         print('Step 1: Sequence Alignment')
-        with multiprocessing.Pool(16) as p:
-            step1_result = p.starmap(parse, [(user_files[i], answer)
-                                             for i in range(len(user_files))])
-
+        # with multiprocessing.Pool(16) as p:
+        #     step1_result = p.starmap(parse, [(user_files[i], answer)
+        #                                      for i in range(len(user_files))])
+        step1_result = [parse(user_files[i], answer) for i in range(len(user_files))]
+        assert(all(len(user_answer)==len(tasks) for user_answer in step1_result))
         # Step 2: Scoring
         for i in range(len(step1_result)):
             data = step1_result[i]
@@ -294,7 +312,8 @@ if __name__ == "__main__":
                 # parse user.docx error, record directly.
                 result.append(data)
             else:
-                result.append(scoring(data))
+                userid=os.path.basename(user_files[i])
+                result.append(scoring(userid,result_path, data,tasks))
 
         # write result to result.xls
         rsheet = workbook.sheet_by_index(0)

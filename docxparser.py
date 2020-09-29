@@ -97,7 +97,7 @@ def xml2text(xml):
     return text
 
 
-def process(docx, img_dir=None):
+def process(docx):
     # return (text:str,imgs:List[cv2::img])
     text = u''
 
@@ -124,15 +124,18 @@ def process(docx, img_dir=None):
             text += xml2text(zipf.read(fname))
 
     imgList = []
-    if img_dir is not None:
-        # extract images
-        for fname in filelist:
-            _, extension = os.path.splitext(fname)
-            if extension in [".jpg", ".jpeg", ".png", ".bmp"]:
-                binary = np.frombuffer(zipf.read(fname), np.uint8)
-                img = cv2.imdecode(binary, cv2.IMREAD_ANYCOLOR)
-                imgList.append((fname, img))
-
+    # extract images
+    for fname in filelist:
+        _, extension = os.path.splitext(fname)
+        if extension in [".jpg", ".jpeg", ".png", ".bmp"]:
+            binary = np.frombuffer(zipf.read(fname), np.uint8)
+            img = cv2.imdecode(binary, cv2.IMREAD_ANYCOLOR)
+            imgid = re.findall(r'word/media/image(\d+).png',fname)
+            assert(len(imgid)==1)
+            imgid=imgid[0]
+            imgList.append((imgid, img))
+    imgList = sorted(imgList,key=lambda x:x[0])
+    imgList = [img for id,img in imgList]
     zipf.close()
     return (text.strip(), imgList)
 
