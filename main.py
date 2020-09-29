@@ -265,6 +265,7 @@ def parse(user_file: str, answer: str):
         imgs = [user_imgs[int(i)]
                 for i in re.findall(r'<docximg:(\d+)>', text)]
         user_answer.append((text, imgs))
+    print('step1:',user_file)
     return user_answer
 
 
@@ -331,10 +332,10 @@ if __name__ == "__main__":
         print('Has illegal file, mandatory termination.')
         quit()
     log_path = os.path.join(result_path, 'log')
-    create_folder(result_path)
-    create_folder(log_path)
     begin = input('Press Y to be continue: ')
     if begin.lower() == 'y':
+        create_folder(result_path)
+        create_folder(log_path)
         result = []  # Store the final result: [{'score':float,'log':str},...]
         # Step 1: Parse user document and get the content of each task
         print('Step 1: Sequence Alignment')

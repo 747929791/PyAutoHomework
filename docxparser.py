@@ -143,7 +143,7 @@ def process(docx):
 if __name__ == '__main__':
     #args = process_args()
     #text = process(args.docx, args.img_dir)
-    text = process('test.docx', 'img')
+    text = process('test.docx')
     with open('test.out', 'w', encoding='utf-8') as w:
         w.write(repr(text[0]))
     #sys.stdout.write(text.encode('utf-8'))
