@@ -67,7 +67,6 @@ def shorten_log(s: str, length=20):
     if len(s) > length:
         mid = length//2-1
         s = s[:mid]+'...'+s[-(length-mid-3):]
-        s = s[:length-3]+'...'
     return s
 
 
@@ -129,16 +128,27 @@ class Task:
                 while True:
                     score = input('Input score:')
                     if re.match(r'^\d+(\.\d+)?$', score):
-                        result['score'] = float(score)
-                        break
+                        score = float(score)
+                        if score > self.score:
+                            print('  Too much score!')
+                        else:
+                            result['score'] = score
+                            break
                     else:
                         print('  Format error!')
-                if self.isnocomment:
-                    result_symbol = ''
+                # if self.isnocomment:
+                #     comment = ''
+                # else:
+                #     comment = input('Write your comment here:')
+                if result['score'] == self.score:
+                    result_symbol = '√'+f'  +{self.score}'
+                elif result['score'] > 0:
+                    score = result['score']
+                    result_symbol = '×'+f'  +{score}'
                 else:
-                    result_symbol = input('Write your comment here:')
-                log_text = shorten_log(text)
-                result['log'] = f'Task:{self.taskid}\tYour_Answer:"{log_text}"\t{result_symbol}'
+                    result_symbol = '×'
+                log_text = shorten_log(repr(text))
+                result['log'] = f'Task:{self.taskid}\tYour_Answer:{log_text}\t{result_symbol}'
                 if len(imgs) > 0:
                     cv2.destroyAllWindows()
                 cache[task_key] = result
@@ -178,13 +188,13 @@ class Task:
                 result_symbol = '×'+f'  +{score}'
             else:
                 result_symbol = '×'
-            log_text = shorten_log(text)
-            result['log'] = f'Task:{self.taskid}\tYour_Answer:"{log_text}"\t{result_symbol}'
+            log_text = shorten_log(repr(text))
+            result['log'] = f'Task:{self.taskid}\tYour_Answer:{log_text}\t{result_symbol}'
         assert('score' in result and 'log' in result)
         if self.isjump and result['score'] < self.score:
             for i, task in enumerate(tasks):
                 if task.taskid == self.jumpTarget:
-                    #print(f'Wrong answer at {self.taskid}, jump to:{task.taskid}.')
+                    print(result['log'], '. JUMP to : {{task.taskid}}.')
                     text, imgs = user_input[i]
                     return task.run(userid, result_path, text, imgs, user_input, tasks)
         return result
@@ -275,6 +285,7 @@ def parse(user_file: str, answer: str):
         text = (''.join(a for a, b in L)).strip()
         imgs = [user_imgs[int(i)]
                 for i in re.findall(r'<docximg:(\d+)>', text)]
+        text = re.sub(r'<docximg:(\d+)>', '{img}', text)
         user_answer.append((text, imgs))
     print('step1:', user_file)
     return user_answer
