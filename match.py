@@ -5,6 +5,7 @@ import time
 from numba import jit
 import numpy as np
 
+
 @jit(nopython=True)
 def DP(A, B):
     w = [3, -1]
@@ -16,7 +17,7 @@ def DP(A, B):
     for i in range(1, n+1):
         dp[i][0] = a+b*i
         ord[i][0] = (0, 0)
-    gu = [(-1,-1) for i in range(m+1)]
+    gu = [(-1, -1) for i in range(m+1)]
     for i in range(1, m+1):
         dp[0][i] = a+b*i
         ord[0][i] = (0, 0)
@@ -52,7 +53,7 @@ def DP(A, B):
     return ans, match
 
 
-def match(A,B,name1 = 'str1',name2 = 'str2'):
+def match(A, B, name1='str1', name2='str2'):
     ans, match = DP(A, B)
     result = str(ans)
     # out = open('./match.txt', 'w')

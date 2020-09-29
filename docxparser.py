@@ -130,12 +130,12 @@ def process(docx):
         if extension in [".jpg", ".jpeg", ".png", ".bmp"]:
             binary = np.frombuffer(zipf.read(fname), np.uint8)
             img = cv2.imdecode(binary, cv2.IMREAD_ANYCOLOR)
-            imgid = re.findall(r'word/media/image(\d+).png',fname)
-            assert(len(imgid)==1)
-            imgid=imgid[0]
+            imgid = re.findall(r'word/media/image(\d+).png', fname)
+            assert(len(imgid) == 1)
+            imgid = imgid[0]
             imgList.append((imgid, img))
-    imgList = sorted(imgList,key=lambda x:x[0])
-    imgList = [img for id,img in imgList]
+    imgList = sorted(imgList, key=lambda x: x[0])
+    imgList = [img for id, img in imgList]
     zipf.close()
     return (text.strip(), imgList)
 
