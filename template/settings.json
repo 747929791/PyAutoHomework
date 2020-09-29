@@ -1,7 +1,7 @@
 {
-    "tasks": [
-        {
-            "taskid": "6",
+    "tasks": {
+        "comment": "In tasks field, We use the taskid->args mapping.",
+        "6": {
             "answer": "\\\\d+(\\\\.\\\\d+)?",
             "comment1": "You can use 'json.dumps(r'regexStr')' to get above field.",
             "score": 10,
@@ -9,8 +9,7 @@
                 "REGEX"
             ]
         },
-        {
-            "taskid": "7",
+        "7": {
             "score": 10,
             "answer": [
                 "一",
@@ -23,5 +22,5 @@
             "comment1": "Multiple answers when answer is a LIST, which can define partial score with a DICT.",
             "comment2": "For example, '一' and '壹' get full score, but '1' get half."
         }
-    ]
+    }
 }

@@ -1,16 +1,17 @@
 # -*- coding: utf-8 -*-
 import re
 import os
+import json
 import glob
 import string
 import argparse
 import hashlib
 import multiprocessing
-from enum import Enum
 from typing import List, Tuple, Dict
 
 import xlrd
 import xlwt
+import numpy as np
 
 import docxparser
 from match import match
@@ -50,18 +51,13 @@ def format_log(s, blank=2):
                     L[i] = s[:x]+' '*(blank+m-x)+s[x+1:]
 
 
-class TaskType(Enum):
-    match = 0
-    mannal = 1
-
-
 class Task:
-    def __init__(self, args):
+    def __init__(self, args: List[str], settings: Dict):
         assert(type(args) == list and all(type(s) == str for s in args))
         self.taskid = args[0]                       # 任务的唯一ID
-        if len(args)==0:
+        if len(args) == 0:
             # see settings.json
-            self.fromSettings()
+            self.fromSettings(settings)
         if len(args) >= 3:
             self.parseArgs(args[1:])
             self.answer = str(args[1])
@@ -70,18 +66,54 @@ class Task:
             raise NotImplementedError
         assert(hasattr(self, 'taskid'))
         assert(hasattr(self, 'score') and type(self.score) == float)
-        assert(hasattr(self, 'type'))
 
-    def parseArgs(self,args):
+    def parseArgs(self, args):
         self.isregex = 'REGEX' in args          # 是否开启正则匹配模式
-        self.issub = 'SUB' in args             # 是否是子问题（主问题满分自动跳过）
+        self.issub = 'SUB' in args              # 是否是子问题（主问题满分自动跳过）
         self.ismannal = 'MANNAL' in args        # 是否手工阅卷
+        self.isnocomment = 'NOCOMMENT' in args  # 手工阅卷时是否需要写评语(出现在log里)
         self.isjump = 'JUMP' in args            # 是否是子问题（主问题满分自动跳过）
+        self.islowercase = 'LOWERCASE' in args
         if self.isjump:
             self.jumpTarget = args[1+args.index('JUMP')]
 
-    def fromSettings(self):
-        pass # TODO
+    def fromSettings(self, settings):
+        assert('tasks' in settings)
+        assert(self.taskid in settings['tasks'])
+        setting = settings['tasks'][self.taskid]
+        self.score = setting['score']
+        self.answer = setting.get('answer', '')
+        parseArgs(setting.get('args', []))
+
+    def run(self, userid:str, text: str, imgs: List[np.ndarray], tasks: List[Task]) -> Tuple[Dict]:
+        """
+        return {'score':float,'log':str}
+        """
+        result=dict()
+        if self.ismannal:
+            # 人工阅卷
+            if self.isnocomment:
+                result['log']=''
+            else:
+                result['log']=input('Write your comment here:')
+        else:
+            # 自动阅卷
+            if self.islowercase:
+                text=text.lower()
+            if True: # TODO
+                result['score'] = self.score
+
+            if self.isnocomment:
+                result_symbol = 'Invisible'
+            elif result['score']==self.score:
+                result_symbol = '√'+f'  +{self.score}'
+            elif result['score']>0:
+                result_symbol = '×'+f'  +{result['score']}'
+            else:
+                result_symbol = '×'
+            log = f'Task:{self.taskid}\tYour_Answer:"{text}"\t{result_symbol}\n'
+        assert('score' in result and 'log' in result)
+        return result
 
 
 def checkTaskList(tasks: List[Task]):
@@ -91,7 +123,7 @@ def checkTaskList(tasks: List[Task]):
     assert(all(task.isjump == False or task.jumpTarget in taskD for task in tasks))
 
 
-def parseAnswer(answer: str):
+def parseAnswer(answer: str, settings: Dict):
     """
     answer:       text of answer.docx
     return:       List[Task]
@@ -101,7 +133,7 @@ def parseAnswer(answer: str):
     tasks = []
     for s in re.findall(task_pattern, answer):
         args = s.split('|')
-        tasks.append(Task(args))
+        tasks.append(Task(args, settings))
     checkTaskList(tasks)
     return tasks
 
@@ -213,11 +245,15 @@ if __name__ == "__main__":
     xls_path = os.path.join(root, 'template.xls')
     answer_path = os.path.join(root, 'answer.docx')
     result_path = os.path.join(root, 'result')
+    settings_path = os.path.join(root, 'settings.json')
     assert(os.path.exists(root))
     assert(os.path.exists(data_path))
     assert(os.path.exists(xls_path))
     assert(os.path.exists(answer_path))
+    assert(os.path.exists(settings_path))
     answer, answer_imgs = docxparser.process(answer_path)
+    settings = json.load(open(settings_path, 'r'))
+    tasks = parseAnswer(answer, settings)
     user_files = glob.glob(os.path.join(data_path, '*.*'))
     workbook = xlrd.open_workbook(xls_path)
     assert(len(workbook.sheets()) == 1)
