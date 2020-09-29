@@ -1,4 +1,5 @@
 {
+    "longTermLog": "The scoring details are here: http://166.111.139.15:8083/{md5}",
     "tasks": {
         "comment": "In tasks field, We use the taskid->args mapping.",
         "6": {
