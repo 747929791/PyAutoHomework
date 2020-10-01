@@ -131,8 +131,8 @@ class Task:
                         'Input score (press "O" to open the docx file):')
                     if score.lower() == 'o':
                         command = self.settings.get(
-                            'openFileCommand').replace('{path}', userfile)
-                        os.system(os.path.abspath(command))
+                            'openFileCommand').replace('{path}', os.path.abspath(userfile))
+                        os.system(command)
                         continue
                     if re.match(r'^\d+(\.\d+)?$', score):
                         score = float(score)
