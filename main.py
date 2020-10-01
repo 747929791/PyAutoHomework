@@ -74,6 +74,7 @@ class Task:
     def __init__(self, args: List[str], settings: Dict):
         assert(type(args) == list and all(type(s) == str for s in args))
         self.taskid = args[0]                       # 任务的唯一ID
+        self.settings = settings
         if len(args) == 1:
             # see settings.json
             self.fromSettings(settings)
@@ -129,7 +130,9 @@ class Task:
                     score = input(
                         'Input score (press "O" to open the docx file):')
                     if score.lower() == 'o':
-                        os.system(os.path.abspath(userfile))
+                        command = self.settings.get(
+                            'openFileCommand').replace('{path}', userfile)
+                        os.system(os.path.abspath(command))
                         continue
                     if re.match(r'^\d+(\.\d+)?$', score):
                         score = float(score)
