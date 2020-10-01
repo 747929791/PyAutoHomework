@@ -125,15 +125,22 @@ def process(docx):
 
     imgList = []
     # extract images
-    for fname in filelist:
-        _, extension = os.path.splitext(fname)
-        if extension in [".jpg", ".jpeg", ".png", ".bmp"]:
-            binary = np.frombuffer(zipf.read(fname), np.uint8)
-            img = cv2.imdecode(binary, cv2.IMREAD_ANYCOLOR)
-            imgid = re.findall(r'word/media/image(\d+).png', fname)
-            assert(len(imgid) == 1)
-            imgid = imgid[0]
-            imgList.append((imgid, img))
+    imgfile = [s for s in filelist if 'word/media/image' in s]
+    # for fname in filelist:
+    #     _, extension = os.path.splitext(fname)
+    #     if extension in [".jpg", ".jpeg", ".png", ".bmp", ".tiff"]:
+    for fname in imgfile:
+        binary = np.frombuffer(zipf.read(fname), np.uint8)
+        img = cv2.imdecode(binary, cv2.IMREAD_ANYCOLOR)
+        n, m, _ = img.shape
+        tn, tm = 800, 800
+        r = min(tn/n, tm/m)
+        tn, tm = int(n*r), int(m*r)
+        img = cv2.resize(img, (tm, tn))
+        imgid = re.findall(r'word/media/image(\d+)\..+?', fname)
+        assert(len(imgid) == 1)
+        imgid = int(imgid[0])
+        imgList.append((imgid, img))
     imgList = sorted(imgList, key=lambda x: x[0])
     imgList = [img for id, img in imgList]
     zipf.close()
@@ -144,6 +151,11 @@ if __name__ == '__main__':
     #args = process_args()
     #text = process(args.docx, args.img_dir)
     text = process('test.docx')
+    print(text[0])
+    for i in range(len(text[1])):
+        print('img', i)
+        cv2.imshow('img', text[1][i])
+        cv2.waitKey(0)
     with open('test.out', 'w', encoding='utf-8') as w:
         w.write(repr(text[0]))
     #sys.stdout.write(text.encode('utf-8'))
