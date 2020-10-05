@@ -9,7 +9,6 @@ def md5log(request, path):
     try:
         file = open(os.path.abspath(LOG_DIR+path), "rb")
     except IOError:
-        return HttpResponse(path)
         raise Http404("Log not found")
     else:
         file_data = file.read()
