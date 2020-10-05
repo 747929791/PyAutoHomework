@@ -14,12 +14,13 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
-from django.urls import include,path,register_converter
+from django.urls import include, path, register_converter
 
 from . import views
 
+
 class MD5Converter:
-    regex = '[0-9a-zA-Z]{32}'
+    regex = '.*[0-9a-zA-Z]{32}'
 
     def to_python(self, value):
         return str(value)
@@ -27,8 +28,9 @@ class MD5Converter:
     def to_url(self, value):
         return str(value)
 
+
 register_converter(MD5Converter, 'md5')
 
 urlpatterns = [
-    path('<md5:md5>',views.md5log)
+    path('<md5:path>', views.md5log)
 ]

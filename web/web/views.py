@@ -2,13 +2,14 @@ import os
 
 from django.http import HttpResponse, Http404
 
-LOG_DIR = '../log'
+LOG_DIR = '../log/'
 
 
-def md5log(request, md5):
+def md5log(request, path):
     try:
-        file = open(os.path.join(LOG_DIR, md5), "rb")
+        file = open(os.path.abspath(LOG_DIR+path), "rb")
     except IOError:
+        return HttpResponse(path)
         raise Http404("Log not found")
     else:
         file_data = file.read()
