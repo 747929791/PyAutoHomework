@@ -396,6 +396,8 @@ if __name__ == "__main__":
                 result.append(data)
             else:
                 userid = os.path.splitext(os.path.basename(user_files[i]))[0]
+                print('='*5, 'Scoring:', userid,
+                      f'{i}/{len(step1_result)}', '='*5)
                 result.append(
                     scoring(user_files[i], userid, result_path, data, tasks))
 
