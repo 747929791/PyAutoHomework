@@ -18,10 +18,14 @@ import cv2
 import docxparser
 from match import match
 
+
 def wide_chars(s):
-    return sum(unicodedata.east_asian_width(x)=='W' for x in s)
+    return sum(unicodedata.east_asian_width(x) == 'W' for x in s)
+
+
 def width(s):
     return len(s) + wide_chars(s)
+
 
 def create_folder(path):
     if not os.path.exists(path):
@@ -55,13 +59,15 @@ def format_log(s, blank=2):
                 s = L[i]
                 if '\t' in s:
                     x = s.index('\t')
-                    w=width(s[:x])
+                    w = width(s[:x])
                     L[i] = s[:x]+' '*(blank+m-w)+s[x+1:]
 
-def shorten_log(s:str,length=10):
-    if len(s)>length:
-        s=s[:length-3]+'...'
+
+def shorten_log(s: str, length=10):
+    if len(s) > length:
+        s = s[:length-3]+'...'
     return s
+
 
 class Task:
     def __init__(self, args: List[str], settings: Dict):
@@ -86,6 +92,7 @@ class Task:
         self.isnocomment = 'NOCOMMENT' in args  # 手工阅卷时是否需要写评语(出现在log里)
         self.isjump = 'JUMP' in args            # 是否是子问题（主问题满分自动跳过）
         self.islowercase = 'LOWERCASE' in args
+        self.isprogram = 'PROGRAM' in args
         if self.isjump:
             self.jumpTarget = args[1+args.index('JUMP')]
 
@@ -111,7 +118,8 @@ class Task:
             if task_key in cache:
                 result = cache[task_key]
             else:
-                print('-'*40+'\n'+userid+f'\nTask:{self.taskid} ({self.score})\n')
+                print('-'*40+'\n'+userid +
+                      f'\nTask:{self.taskid} ({self.score})\n')
                 print(text)
                 if len(imgs) > 0:
                     for i in range(len(imgs)):
@@ -138,39 +146,43 @@ class Task:
             # 自动阅卷
             if self.islowercase:
                 text = text.lower()
-
-            def match(answer, text):
-                if self.isregex:
-                    return bool(re.match('^'+answer+'$', text))
-                else:
-                    return answer == text
-
-            def check(item, text):
-                # return score
-                if type(item) == str:
-                    return self.score if match(item, text) else 0.0
-                elif type(item) == dict:
-                    return item['score'] if match(item['answer'], text) else 0.0
-                elif type(item) == list:
-                    for answer in item:
-                        r = check(answer, text)
-                        if r > 0.0:
-                            return r
-                    return 0.0
-                else:
-                    raise NotImplementedError
-            result['score'] = check(self.answer, text)
-            if self.isnocomment:
-                result_symbol = 'Invisible'
-            elif result['score'] == self.score:
-                result_symbol = '√'+f'  +{self.score}'
-            elif result['score'] > 0:
-                score = result['score']
-                result_symbol = '×'+f'  +{score}'
+            # 程序阅卷
+            if self.isprogram:
+                result = spj.run(self.taskid, text)
             else:
-                result_symbol = '×'
-            log_text = shorten_log(text)
-            result['log'] = f'Task:{self.taskid}\tYour_Answer:"{log_text}"\t{result_symbol}'
+                # 匹配阅卷
+                def match(answer, text):
+                    if self.isregex:
+                        return bool(re.match('^'+answer+'$', text))
+                    else:
+                        return answer == text
+
+                def check(item, text):
+                    # return score
+                    if type(item) == str:
+                        return self.score if match(item, text) else 0.0
+                    elif type(item) == dict:
+                        return item['score'] if match(item['answer'], text) else 0.0
+                    elif type(item) == list:
+                        for answer in item:
+                            r = check(answer, text)
+                            if r > 0.0:
+                                return r
+                        return 0.0
+                    else:
+                        raise NotImplementedError
+                result['score'] = check(self.answer, text)
+                if self.isnocomment:
+                    result_symbol = 'Invisible'
+                elif result['score'] == self.score:
+                    result_symbol = '√'+f'  +{self.score}'
+                elif result['score'] > 0:
+                    score = result['score']
+                    result_symbol = '×'+f'  +{score}'
+                else:
+                    result_symbol = '×'
+                log_text = shorten_log(text)
+                result['log'] = f'Task:{self.taskid}\tYour_Answer:"{log_text}"\t{result_symbol}'
         assert('score' in result and 'log' in result)
         if self.isjump and result['score'] < self.score:
             for i, task in enumerate(tasks):
@@ -265,7 +277,7 @@ def parse(user_file: str, answer: str):
         imgs = [user_imgs[int(i)]
                 for i in re.findall(r'<docximg:(\d+)>', text)]
         user_answer.append((text, imgs))
-    print('step1:',user_file)
+    print('step1:', user_file)
     return user_answer
 
 
@@ -274,7 +286,7 @@ def scoring(userid: str, result_path: str, user_input: Tuple[str, List[np.ndarra
     return:       Dict:{'score':float,'log':str}
     """
     print('='*40)
-    print('UserID:',userid)
+    print('UserID:', userid)
     sum_score = 0.0
     log = 'This report is generated by the automatic marking program\n'
     for (text, imgs), task in zip(user_input, tasks):
@@ -288,6 +300,17 @@ def scoring(userid: str, result_path: str, user_input: Tuple[str, List[np.ndarra
     print(userid, sum_score)
     print(log)
     return {'score': sum_score, 'log': log}
+
+
+def load_spj(work_dir: str):
+    # load special judge program
+    path = os.path.join(work_dir, 'program/spj.py')
+    if os.path.exists(path) and 'spj' not in sys.modules:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("spj", path)
+        foo = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(foo)
+        assert(callable(spj.run))
 
 
 if __name__ == "__main__":
@@ -308,6 +331,7 @@ if __name__ == "__main__":
     assert(os.path.exists(xls_path))
     assert(os.path.exists(answer_path))
     assert(os.path.exists(settings_path))
+    load_spj(root)
     answer, answer_imgs = docxparser.process(answer_path)
     settings = json.load(open(settings_path, 'r'))
     tasks = parseAnswer(answer, settings)
@@ -378,5 +402,5 @@ if __name__ == "__main__":
                     with open(os.path.join(log_path, md5), 'wb') as w:
                         w.write(str.encode(D['log'], encoding='utf-8'))
                     wsheet.write(
-                        i, 5, settings.get('longTermLog','').replace('{md5}',md5))
+                        i, 5, settings.get('longTermLog', '').replace('{md5}', md5))
         wbk.save(os.path.join(result_path, 'result.xls'))
