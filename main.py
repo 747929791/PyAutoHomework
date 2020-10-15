@@ -63,16 +63,22 @@ def format_log(s, blank=2):
                     L[i] = s[:x]+' '*(blank+m-w)+s[x+1:]
 
 
-def shorten_log(s: str, length=10):
+def shorten_log(s: str, length=20):
     if len(s) > length:
-        s = s[:length-3]+'...'
+        mid = length//2-1
+        s = s[:mid]+'...'+s[-(length-mid-3):]
     return s
+
+
+wrong_answer_statistics = []  # (userid,taskid,user_input)
+score_statistics = []  # (userid,taskid,score)
 
 
 class Task:
     def __init__(self, args: List[str], settings: Dict):
         assert(type(args) == list and all(type(s) == str for s in args))
         self.taskid = args[0]                       # 任务的唯一ID
+        self.settings = settings
         if len(args) == 1:
             # see settings.json
             self.fromSettings(settings)
@@ -104,10 +110,11 @@ class Task:
         self.answer = setting.get('answer', '')
         self.parseArgs(setting.get('args', []))
 
-    def run(self, userid: str, result_path: str, text: str, imgs: List[np.ndarray], user_input: List, tasks: List) -> Tuple[Dict]:
+    def run(self, userfile: str, userid: str, result_path: str, text: str, imgs: List[np.ndarray], user_input: List, tasks: List) -> Tuple[Dict]:
         """
         return {'score':float,'log':str}
         """
+        origin_text = text
         result = dict()
         if self.ismannal:
             # 人工阅卷
@@ -126,18 +133,35 @@ class Task:
                         cv2.imshow('img'+str(i), imgs[i])
                     cv2.waitKey(10)
                 while True:
-                    score = input('Input score:')
+                    score = input(
+                        'Input score (press "O" to open the docx file):')
+                    if score.lower() == 'o':
+                        command = self.settings.get(
+                            'openFileCommand').replace('{path}', os.path.abspath(userfile))
+                        os.system(command)
+                        continue
                     if re.match(r'^\d+(\.\d+)?$', score):
-                        result['score'] = float(score)
-                        break
+                        score = float(score)
+                        if score > self.score:
+                            print('  Too much score!')
+                        else:
+                            result['score'] = score
+                            break
                     else:
                         print('  Format error!')
-                if self.isnocomment:
-                    result_symbol = ''
+                # if self.isnocomment:
+                #     comment = ''
+                # else:
+                #     comment = input('Write your comment here:')
+                if result['score'] == self.score:
+                    result_symbol = '√'+f'  +{self.score}'
+                elif result['score'] > 0:
+                    score = result['score']
+                    result_symbol = '×'+f'  +{score}'
                 else:
-                    result_symbol = input('Write your comment here:')
-                log_text = shorten_log(text)
-                result['log'] = f'Task:{self.taskid}\tYour_Answer:"{log_text}"\t{result_symbol}'
+                    result_symbol = '×'
+                log_text = shorten_log(repr(text))
+                result['log'] = f'Task:{self.taskid}\tYour_Answer:{log_text}\t{result_symbol}'
                 if len(imgs) > 0:
                     cv2.destroyAllWindows()
                 cache[task_key] = result
@@ -181,13 +205,16 @@ class Task:
                     result_symbol = '×'+f'  +{score}'
                 else:
                     result_symbol = '×'
-                log_text = shorten_log(text)
-                result['log'] = f'Task:{self.taskid}\tYour_Answer:"{log_text}"\t{result_symbol}'
+                log_text = shorten_log(repr(text))
+                result['log'] = f'Task:{self.taskid}\tYour_Answer:{log_text}\t{result_symbol}'
         assert('score' in result and 'log' in result)
+        if result['score'] < self.score:
+            wrong_answer_statistics.append((userid, self.taskid, origin_text))
+        score_statistics.append((userid, self.taskid, result['score']))
         if self.isjump and result['score'] < self.score:
             for i, task in enumerate(tasks):
                 if task.taskid == self.jumpTarget:
-                    #print(f'Wrong answer at {self.taskid}, jump to:{task.taskid}.')
+                    print(result['log'], '. JUMP to : {{task.taskid}}.')
                     text, imgs = user_input[i]
                     return task.run(userid, result_path, text, imgs, user_input, tasks)
         return result
@@ -257,7 +284,9 @@ def parse(user_file: str, answer: str):
         task_address.append(len(template_str))
     task_address.pop()
     L = user_input.split(docxparser.graphic_token)
-    assert(len(L) == len(user_imgs)+1)
+    if len(L) != len(user_imgs)+1:
+        print(f'Warning. {user_file} image number mismatch. imgs:' +
+              str(len(user_imgs))+' tokens:'+str(len(L)-1)+'')
     user_input = ''
     for i in range(len(L)):
         user_input += L[i]
@@ -276,22 +305,24 @@ def parse(user_file: str, answer: str):
         text = (''.join(a for a, b in L)).strip()
         imgs = [user_imgs[int(i)]
                 for i in re.findall(r'<docximg:(\d+)>', text)]
+        text = re.sub(r'<docximg:(\d+)>', '{img}', text)
         user_answer.append((text, imgs))
     print('step1:', user_file)
     return user_answer
 
 
-def scoring(userid: str, result_path: str, user_input: Tuple[str, List[np.ndarray]], tasks: List[Task]):
+def scoring(userfile: str, userid: str, result_path: str, user_input: Tuple[str, List[np.ndarray]], tasks: List[Task]):
     """
     return:       Dict:{'score':float,'log':str}
     """
     print('='*40)
     print('UserID:', userid)
     sum_score = 0.0
-    log = 'This report is generated by the automatic marking program\n'
+    log = os.path.basename(userfile)+'\n'
+    log += 'This report is generated by the automatic marking program\n'
     for (text, imgs), task in zip(user_input, tasks):
         if not task.issub:
-            result = task.run(userid, result_path, text,
+            result = task.run(userfile, userid, result_path, text,
                               imgs, user_input, tasks)
             log += '  '+result['log']+'\n'
             sum_score += result['score']
@@ -368,8 +399,10 @@ if __name__ == "__main__":
                                              for i in range(len(user_files))])
         # step1_result = [parse(user_files[i], answer)
         #                 for i in range(len(user_files))]
-        assert(all(len(user_answer) == len(tasks)
-                   for user_answer in step1_result))
+        assert(all(len(r) == len(tasks) or (type(r) == dict and 'score' in r)
+                   for r in step1_result))
+        print('Step1 over,', len(step1_result), 'files are aligned.')
+
         # Step 2: Scoring
         for i in range(len(step1_result)):
             data = step1_result[i]
@@ -378,7 +411,10 @@ if __name__ == "__main__":
                 result.append(data)
             else:
                 userid = os.path.splitext(os.path.basename(user_files[i]))[0]
-                result.append(scoring(userid, result_path, data, tasks))
+                print('='*5, 'Scoring:', userid,
+                      f'{i}/{len(step1_result)}', '='*5)
+                result.append(
+                    scoring(user_files[i], userid, result_path, data, tasks))
 
         # write result to result.xls
         rsheet = workbook.sheet_by_index(0)
@@ -404,3 +440,34 @@ if __name__ == "__main__":
                     wsheet.write(
                         i, 5, settings.get('longTermLog', '').replace('{md5}', md5))
         wbk.save(os.path.join(result_path, 'result.xls'))
+        # statistics
+        w = open(os.path.join(result_path, 'statistics.txt'), 'w')
+        w.write('Average Score:'+str(sum(score for uid, tid,
+                                         score in score_statistics)/len(user_files))+'\n')
+        wrong_list = []
+        for task in tasks:
+            L = [(uid, text) for uid, tid,
+                 text in wrong_answer_statistics if tid == task.taskid]
+            D = dict()
+            for uid, text in L:
+                studentID = os.path.basename(uid).split('_')[0]
+                if text not in D:
+                    D[text] = []
+                D[text].append(studentID)
+            L = [(k, v) for k, v in D.items()]
+            L = sorted(L, key=lambda x: -len(x[1]))
+            wrong_list.append(L)
+        w.write('Wrong Case:\n')
+        for i in range(len(tasks)):
+            if len(wrong_list[i]) > 0:
+                w.write('  Task:'+str(tasks[i].taskid)+'\n')
+                for text, userids in wrong_list[i]:
+                    w.write(f"    {repr(text)}:\t"+str(len(userids))+'\n')
+        w.write('Details Wrong Case:\n')
+        w.write('Wrong Case:\n')
+        for i in range(len(tasks)):
+            if len(wrong_list[i]) > 0:
+                w.write('  Task:'+str(tasks[i].taskid)+'\n')
+                for text, userids in wrong_list[i]:
+                    w.write(f"    {repr(text)}:\t"+str(userids)+'\n')
+        w.close()

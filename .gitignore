@@ -370,3 +370,4 @@ FodyWeavers.xsd
 log
 *.bat
 test*
+*.sqlite3
