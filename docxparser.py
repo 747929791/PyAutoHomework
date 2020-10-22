@@ -70,10 +70,6 @@ def xml2text(xml):
             text += t_text if t_text is not None else ''
         elif child.tag == qn('w:tab'):
             text += '\t'
-        elif child.tag == qn('w:br'):
-            text += '{br}'
-        elif child.tag == qn('w:cr'):
-            text += '{cr}'
         elif child.tag in (qn('w:br'), qn('w:cr')):
             text += '\n'
         elif child.tag == qn("w:p"):
@@ -83,6 +79,7 @@ def xml2text(xml):
         elif 'grid' in tagroot.lower():
             text += '{'+tagroot+'}'
         else:
+            continue
             ignore = {'document', 'body', 'pPr', 'jc', 'rPr', 'rFonts', 'b', 'bCs', 'docGrid', 'sz',
                       'szCs', 'r', 'color', 'pStyle', 'numPr', 'ilvl', 'numId', 'ind', 'tbl', 'tblPr', 'tblStyle',
                       'tblW', 'tblBorders', 'left', 'right', 'gridCol', 'tblLook', 'tr', 'trPr', 'tc', 'tcPr', 'tcW', 'i', 'iCs',

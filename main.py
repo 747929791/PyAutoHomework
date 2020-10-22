@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import re
 import os
+import sys
 import json
 import glob
 import string
@@ -116,6 +117,22 @@ class Task:
         """
         origin_text = text
         result = dict()
+
+        def gen_result_line(score: float, log: str = None):
+            log_text = shorten_log(repr(origin_text))
+            if score == self.score:
+                result_symbol = '√'+f'  +{self.score}'
+            elif score > 0:
+                result_symbol = '×'+f'  +{score}'
+            else:
+                result_symbol = '×'
+            ret = dict()
+            ret['score'] = score
+            ret['log'] = f'Task:{self.taskid}\tYour_Answer:{log_text}\t{result_symbol}'
+            if log != None:
+                assert(type(log) == str)
+                ret['log'] += '\n    '.join(['']+log.split('\n'))
+            return ret
         if self.ismannal:
             # 人工阅卷
             task_key = userid+'-'+self.taskid
@@ -145,23 +162,10 @@ class Task:
                         if score > self.score:
                             print('  Too much score!')
                         else:
-                            result['score'] = score
                             break
                     else:
                         print('  Format error!')
-                # if self.isnocomment:
-                #     comment = ''
-                # else:
-                #     comment = input('Write your comment here:')
-                if result['score'] == self.score:
-                    result_symbol = '√'+f'  +{self.score}'
-                elif result['score'] > 0:
-                    score = result['score']
-                    result_symbol = '×'+f'  +{score}'
-                else:
-                    result_symbol = '×'
-                log_text = shorten_log(repr(text))
-                result['log'] = f'Task:{self.taskid}\tYour_Answer:{log_text}\t{result_symbol}'
+                result = gen_result_line(score)
                 if len(imgs) > 0:
                     cv2.destroyAllWindows()
                 cache[task_key] = result
@@ -172,7 +176,10 @@ class Task:
                 text = text.lower()
             # 程序阅卷
             if self.isprogram:
-                result = spj.run(self.taskid, text)
+                spj_result = spj.run(self.taskid, input=text, task=self)
+                score = spj_result['score']
+                log = spj_result.get('log', None) or None
+                result = gen_result_line(score, log)
             else:
                 # 匹配阅卷
                 def match(answer, text):
@@ -195,18 +202,8 @@ class Task:
                         return 0.0
                     else:
                         raise NotImplementedError
-                result['score'] = check(self.answer, text)
-                if self.isnocomment:
-                    result_symbol = 'Invisible'
-                elif result['score'] == self.score:
-                    result_symbol = '√'+f'  +{self.score}'
-                elif result['score'] > 0:
-                    score = result['score']
-                    result_symbol = '×'+f'  +{score}'
-                else:
-                    result_symbol = '×'
-                log_text = shorten_log(repr(text))
-                result['log'] = f'Task:{self.taskid}\tYour_Answer:{log_text}\t{result_symbol}'
+                score = check(self.answer, text)
+                result = gen_result_line(score)
         assert('score' in result and 'log' in result)
         if result['score'] < self.score:
             wrong_answer_statistics.append((userid, self.taskid, origin_text))
@@ -216,7 +213,7 @@ class Task:
                 if task.taskid == self.jumpTarget:
                     print(result['log'], '. JUMP to : {{task.taskid}}.')
                     text, imgs = user_input[i]
-                    return task.run(userid, result_path, text, imgs, user_input, tasks)
+                    return task.run(userfile, userid, result_path, text, imgs, user_input, tasks)
         return result
 
     def __str__(self):
@@ -232,6 +229,8 @@ class Task:
             s += ' SUB'
         if self.isnocomment:
             s += ' NOCOMMENT'
+        if self.isprogram:
+            s += ' PROGRAM'
         s += '\tScore:'+str(self.score)
         s += '\tAnswer:'+str(self.answer)
         return s
@@ -339,8 +338,9 @@ def load_spj(work_dir: str):
     if os.path.exists(path) and 'spj' not in sys.modules:
         import importlib.util
         spec = importlib.util.spec_from_file_location("spj", path)
-        foo = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(foo)
+        global spj
+        spj = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(spj)
         assert(callable(spj.run))
 
 
@@ -428,17 +428,14 @@ if __name__ == "__main__":
             if id in studentID:
                 D = result[studentID.index(id)]
                 wsheet.write(i, 4, D['score'])
-                if len(D['log']) < 500:
-                    wsheet.write(i, 5, D['log'])
-                else:
-                    # Since the log is usually very large, the log will be written to the file
-                    m = hashlib.md5()
-                    m.update(str.encode(D['log']))
-                    md5 = m.hexdigest()
-                    with open(os.path.join(log_path, md5), 'wb') as w:
-                        w.write(str.encode(D['log'], encoding='utf-8'))
-                    wsheet.write(
-                        i, 5, settings.get('longTermLog', '').replace('{md5}', md5))
+                # Since the log is usually very large, the log will be written to the file
+                m = hashlib.md5()
+                m.update(str.encode(D['log']))
+                md5 = m.hexdigest()
+                with open(os.path.join(log_path, md5), 'wb') as w:
+                    w.write(str.encode(D['log'], encoding='utf-8'))
+                wsheet.write(
+                    i, 5, settings.get('longTermLog', '').replace('{md5}', md5))
         wbk.save(os.path.join(result_path, 'result.xls'))
         # statistics
         w = open(os.path.join(result_path, 'statistics.txt'), 'w')
