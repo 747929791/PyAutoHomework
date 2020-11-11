@@ -7,6 +7,7 @@ import glob
 import string
 import argparse
 import hashlib
+import pickle
 import multiprocessing
 from typing import List, Tuple, Dict
 import unicodedata
@@ -117,6 +118,7 @@ class Task:
         """
         origin_text = text
         result = dict()
+        self.userid = userid
 
         def gen_result_line(score: float, log: str = None):
             log_text = shorten_log(repr(origin_text))
@@ -394,13 +396,16 @@ if __name__ == "__main__":
         result = []  # Store the final result: [{'score':float,'log':str},...]
         # Step 1: Parse user document and get the content of each task
         print('Step 1: Sequence Alignment')
-        with multiprocessing.Pool(16) as p:
-            step1_result = p.starmap(parse, [(user_files[i], answer)
-                                             for i in range(len(user_files))])
-        # step1_result = [parse(user_files[i], answer)
-        #                 for i in range(len(user_files))]
-        assert(all(len(r) == len(tasks) or (type(r) == dict and 'score' in r)
-                   for r in step1_result))
+        step1_cache = os.path.join(result_path, 'parse.cache')
+        if os.path.exists(step1_cache):
+            step1_result = pickle.load(open(step1_cache, 'rb'))
+        else:
+            with multiprocessing.Pool(16) as p:
+                step1_result = p.starmap(parse, [(user_files[i], answer)
+                                                 for i in range(len(user_files))])
+            assert(all(len(r) == len(tasks) or (type(r) == dict and 'score' in r)
+                       for r in step1_result))
+            pickle.dump(step1_result, open(step1_cache, 'wb'))
         print('Step1 over,', len(step1_result), 'files are aligned.')
 
         # Step 2: Scoring
