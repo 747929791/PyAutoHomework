@@ -76,7 +76,7 @@ def xml2text(xml):
             text += '\n\n'
         elif tagroot == 'graphic':
             text += graphic_token
-        elif 'grid' in tagroot.lower():
+        elif 'grid' in tagroot.lower() and tagroot!='snapToGrid':
             text += '{'+tagroot+'}'
         else:
             continue
