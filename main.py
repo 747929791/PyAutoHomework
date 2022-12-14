@@ -366,7 +366,7 @@ if __name__ == "__main__":
     assert(os.path.exists(settings_path))
     load_spj(root)
     answer, answer_imgs = docxparser.process(answer_path)
-    settings = json.load(open(settings_path, 'r'))
+    settings = json.load(open(settings_path, 'r', encoding="utf-8"))
     tasks = parseAnswer(answer, settings)
     print(format_log('Tasks:\n'+'\n'.join('  '+str(t) for t in tasks)))
     user_files = glob.glob(os.path.join(data_path, '*.*'))
